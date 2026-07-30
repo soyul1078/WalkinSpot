@@ -18,12 +18,17 @@
 
 ```
 WalkinSpot/
-├── frontend/          # 모바일 앱 (Flutter/FlutterFlow)
-├── backend/           # 백엔드 API (Supabase 함수 등)
-├── database/          # DB 스키마 및 마이그레이션
+├── app/, lib/         # 웹 MVP (Next.js) — Vercel에 루트 그대로 배포
+├── backend/           # 백엔드 API (Supabase Edge Functions)
+├── database/          # DB 스키마, RLS 정책, 시드 데이터
 ├── docs/              # 문서
 └── README.md
 ```
+
+모바일 앱(Flutter/FlutterFlow)은 추후 별도 트랙으로 진행 예정이며, 지금은 Vercel에
+바로 배포해 확인할 수 있는 Next.js 웹 MVP로 홈 화면부터 구현 중입니다. 웹 앱 소스가
+저장소 루트에 있는 이유는 Vercel이 별도 설정 없이(zero-config) 바로 빌드하게 하기
+위함입니다.
 
 ## 🗄️ 데이터베이스 모델
 
@@ -39,13 +44,19 @@ WalkinSpot/
 
 ### 필수 환경
 - Node.js 18+
-- Flutter SDK (모바일 앱 개발 시)
-- Supabase CLI
+- Supabase CLI (Edge Functions 배포 시)
+- Flutter SDK (추후 모바일 앱 개발 시)
+
+### 웹 MVP 로컬 실행
+```bash
+npm install
+npm run dev   # http://localhost:3000
+```
 
 ### 환경 설정
 ```bash
 cp .env.example .env.local
-# .env.local에 Supabase 정보 입력
+# .env.local에 Supabase 정보 입력 (NEXT_PUBLIC_ 변수는 웹 앱에서 사용)
 ```
 
 ### 데이터베이스 초기화
