@@ -137,15 +137,13 @@ export default function Home() {
         </section>
       ) : (
         <section className="mx-5 mt-4 rounded-2xl border-2 border-dashed border-brand-300 bg-brand-50 p-4">
-          <p className="text-sm font-bold text-brand-700">로그인하고 스탬프·쿠폰 받기</p>
-          <p className="mt-1 text-xs text-brand-600">
-            코스를 완주하면 동네 카페 쿠폰을 드려요. 지금 로그인해서 시작해보세요.
-          </p>
+          <p className="text-sm font-bold text-brand-700">회원가입/로그인하고 쿠폰 받기</p>
+          <p className="mt-1 text-xs text-brand-600">미션 3가지 성공하면 동네 카페 쿠폰을 선물로 드려요 🎁</p>
           <button
             onClick={() => setShowLogin(true)}
             className="mt-3 rounded-xl bg-brand-500 px-4 py-2 text-sm font-bold text-white hover:bg-brand-600"
           >
-            로그인하기
+            회원가입 / 로그인
           </button>
         </section>
       )}
