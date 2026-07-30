@@ -134,8 +134,78 @@ CREATE INDEX idx_user_coupons_user ON user_coupons(user_id);
 CREATE INDEX idx_coupons_route ON coupons(route_id);
 CREATE INDEX idx_route_reviews_route ON route_reviews(route_id);
 
--- RLS (Row Level Security) - 나중에 설정
+-- ============================================================
+-- Auth Trigger: auth.users에 가입 시 public.users 프로필 자동 생성
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, nickname)
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'nickname', 'user_' || substr(NEW.id::text, 1, 8)));
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================
+-- RLS (Row Level Security)
+-- ============================================================
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE routes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE checkpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stamps_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE partner_stores ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE route_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE badges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_badges ENABLE ROW LEVEL SECURITY;
+
+-- Users: 프로필은 전체 공개 조회, 본인만 수정 가능
+CREATE POLICY "users_select_all" ON users FOR SELECT USING (true);
+CREATE POLICY "users_update_own" ON users FOR UPDATE USING (auth.uid() = id);
+
+-- Routes: 공개 코스는 전체 조회, 비공개는 작성자만. 생성/수정/삭제는 작성자만
+CREATE POLICY "routes_select_public_or_own" ON routes FOR SELECT USING (is_public = true OR auth.uid() = creator_id);
+CREATE POLICY "routes_insert_own" ON routes FOR INSERT WITH CHECK (auth.uid() = creator_id);
+CREATE POLICY "routes_update_own" ON routes FOR UPDATE USING (auth.uid() = creator_id);
+CREATE POLICY "routes_delete_own" ON routes FOR DELETE USING (auth.uid() = creator_id);
+
+-- Checkpoints: 전체 조회, 해당 코스의 작성자만 등록/수정/삭제
+CREATE POLICY "checkpoints_select_all" ON checkpoints FOR SELECT USING (true);
+CREATE POLICY "checkpoints_insert_route_owner" ON checkpoints FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM routes WHERE routes.id = checkpoints.route_id AND routes.creator_id = auth.uid())
+);
+CREATE POLICY "checkpoints_update_route_owner" ON checkpoints FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM routes WHERE routes.id = checkpoints.route_id AND routes.creator_id = auth.uid())
+);
+CREATE POLICY "checkpoints_delete_route_owner" ON checkpoints FOR DELETE USING (
+  EXISTS (SELECT 1 FROM routes WHERE routes.id = checkpoints.route_id AND routes.creator_id = auth.uid())
+);
+
+-- Stamps/Logs: 본인 기록만 조회/생성 가능 (수정·삭제 불가 = 위변조 방지)
+CREATE POLICY "stamps_logs_select_own" ON stamps_logs FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "stamps_logs_insert_own" ON stamps_logs FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Partner Stores / Coupons / Badges: 전체 조회만 허용 (등록·수정은 service_role 전용)
+CREATE POLICY "partner_stores_select_all" ON partner_stores FOR SELECT USING (true);
+CREATE POLICY "coupons_select_all" ON coupons FOR SELECT USING (true);
+CREATE POLICY "badges_select_all" ON badges FOR SELECT USING (true);
+
+-- User Coupons: 본인 보유 쿠폰만 조회/획득/사용 처리 가능
+CREATE POLICY "user_coupons_select_own" ON user_coupons FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "user_coupons_insert_own" ON user_coupons FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "user_coupons_update_own" ON user_coupons FOR UPDATE USING (auth.uid() = user_id);
+
+-- User Badges: 본인 배지만 조회 가능 (지급은 service_role 전용)
+CREATE POLICY "user_badges_select_own" ON user_badges FOR SELECT USING (auth.uid() = user_id);
+
+-- Route Reviews: 전체 공개 조회, 본인 후기만 작성/수정/삭제
+CREATE POLICY "route_reviews_select_all" ON route_reviews FOR SELECT USING (true);
+CREATE POLICY "route_reviews_insert_own" ON route_reviews FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "route_reviews_update_own" ON route_reviews FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "route_reviews_delete_own" ON route_reviews FOR DELETE USING (auth.uid() = user_id);
