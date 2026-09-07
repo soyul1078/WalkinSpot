@@ -7,6 +7,8 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getMockRouteById, type Checkpoint, type LatLng, type Route } from "@/lib/mockRoutes";
 import { estimateCalories } from "@/lib/geo";
+import { useGpsTracker } from "@/lib/hooks/useGpsTracker";
+import type { User } from "@supabase/supabase-js";
 
 const RouteMap = dynamic(() => import("@/components/RouteMap"), { ssr: false });
 
@@ -19,6 +21,10 @@ export default function RouteDetailPage() {
   const [route, setRoute] = useState<RouteDetail | null>(getMockRouteById(routeId) ?? null);
   const [loading, setLoading] = useState(!route);
   const [notFound, setNotFound] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  const gpsTracker = useGpsTracker(route?.checkpoints ?? []);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -26,6 +32,11 @@ export default function RouteDetailPage() {
       if (!route) setNotFound(true);
       return;
     }
+
+    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
     supabase
       .from("routes")
@@ -59,8 +70,44 @@ export default function RouteDetailPage() {
         }
         setLoading(false);
       });
+
+    return () => subscription.subscription.unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
+
+  // 완주 시 자동으로 모달 표시
+  useEffect(() => {
+    if (gpsTracker.isRouteComplete && gpsTracker.isTracking) {
+      setShowCompleteModal(true);
+    }
+  }, [gpsTracker.isRouteComplete, gpsTracker.isTracking]);
+
+  async function handleCompleteRoute() {
+    if (!user || !route) return;
+
+    try {
+      // 스탬프 기록
+      await supabase?.from("stamps_logs").insert({
+        user_id: user.id,
+        route_id: route.id,
+        completed_at: new Date().toISOString(),
+        is_valid: true,
+      });
+
+      // 완주 기록
+      await supabase?.from("route_completions").insert({
+        user_id: user.id,
+        route_id: route.id,
+        completed_at: new Date().toISOString(),
+        completed_checkpoint_count: gpsTracker.completedCheckpoints.size,
+      });
+
+      gpsTracker.stopTracking();
+      setShowCompleteModal(false);
+    } catch (error) {
+      console.error("완주 기록 중 오류:", error);
+    }
+  }
 
   if (loading) {
     return (
@@ -84,7 +131,7 @@ export default function RouteDetailPage() {
   const calories = estimateCalories(route.category_tag, route.estimated_time);
 
   return (
-    <main className="mx-auto min-h-screen max-w-lg bg-white pb-10 shadow-sm">
+    <main className="mx-auto min-h-screen max-w-lg bg-white pb-10 shadow-sm relative">
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-neutral-100 bg-white/90 px-5 py-4 backdrop-blur">
         <Link href="/" className="text-neutral-500 hover:text-neutral-700" aria-label="뒤로가기">
           ←
@@ -108,17 +155,17 @@ export default function RouteDetailPage() {
         <p className="mt-3 text-sm leading-relaxed text-neutral-600">{route.description}</p>
 
         <div className="mt-5 grid grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-neutral-50 p-3 text-center">
+          <div className="rounded-xl bg-neutral-50 p-4 text-center">
             <p className="text-lg font-bold text-neutral-900">{route.distance}km</p>
-            <p className="mt-0.5 text-xs text-neutral-500">거리</p>
+            <p className="mt-1 text-xs text-neutral-500">거리</p>
           </div>
-          <div className="rounded-2xl bg-neutral-50 p-3 text-center">
+          <div className="rounded-xl bg-neutral-50 p-4 text-center">
             <p className="text-lg font-bold text-neutral-900">{route.estimated_time}분</p>
-            <p className="mt-0.5 text-xs text-neutral-500">예상 소요</p>
+            <p className="mt-1 text-xs text-neutral-500">예상 소요</p>
           </div>
-          <div className="rounded-2xl bg-neutral-50 p-3 text-center">
+          <div className="rounded-xl bg-neutral-50 p-4 text-center">
             <p className="text-lg font-bold text-neutral-900">{calories}kcal</p>
-            <p className="mt-0.5 text-xs text-neutral-500">예상 소모</p>
+            <p className="mt-1 text-xs text-neutral-500">예상 소모</p>
           </div>
         </div>
         <p className="mt-2 text-[11px] text-neutral-400">
@@ -126,23 +173,126 @@ export default function RouteDetailPage() {
         </p>
 
         <div className="mt-6">
-          <p className="mb-2 text-xs font-semibold text-neutral-400">체크포인트 ({route.checkpoints.length})</p>
+          <p className="mb-3 text-xs font-semibold text-neutral-400">체크포인트 ({route.checkpoints.length})</p>
           <ol className="flex flex-col gap-2">
             {route.checkpoints.map((cp, i) => (
-              <li key={cp.name} className="flex items-center gap-3 rounded-xl border border-neutral-100 px-3 py-2 text-sm">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700">
-                  {i + 1}
+              <li
+                key={cp.name}
+                className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm transition ${
+                  gpsTracker.completedCheckpoints.has(cp.name)
+                    ? "border-brand-200 bg-brand-50"
+                    : "border-neutral-100 bg-white"
+                }`}
+              >
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                    gpsTracker.completedCheckpoints.has(cp.name)
+                      ? "bg-brand-500 text-white"
+                      : "bg-neutral-100 text-neutral-600"
+                  }`}
+                >
+                  {gpsTracker.completedCheckpoints.has(cp.name) ? "✓" : i + 1}
                 </span>
-                {cp.name}
+                <span className={gpsTracker.completedCheckpoints.has(cp.name) ? "text-brand-700 font-medium" : ""}>
+                  {cp.name}
+                </span>
               </li>
             ))}
           </ol>
         </div>
 
-        <button className="mt-6 w-full rounded-2xl bg-brand-500 py-3 text-sm font-bold text-white transition hover:bg-brand-600">
-          이 코스로 산책 시작하기
-        </button>
+        {!gpsTracker.isTracking ? (
+          <button
+            onClick={() => gpsTracker.startTracking()}
+            className="mt-6 w-full rounded-xl bg-brand-500 py-3 text-sm font-bold text-white transition hover:bg-brand-600"
+          >
+            이 코스로 산책 시작하기
+          </button>
+        ) : (
+          <div className="mt-6 space-y-3">
+            <div className="rounded-xl bg-brand-50 border border-brand-200 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-brand-500 rounded-full animate-pulse" />
+                <p className="text-sm font-semibold text-brand-700">산책 중...</p>
+              </div>
+              {gpsTracker.currentPosition && (
+                <p className="text-xs text-brand-600">
+                  위치: {gpsTracker.currentPosition.lat.toFixed(4)}, {gpsTracker.currentPosition.lng.toFixed(4)}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => gpsTracker.stopTracking()}
+              className="w-full rounded-xl bg-neutral-200 py-3 text-sm font-bold text-neutral-600 transition hover:bg-neutral-300"
+            >
+              산책 중단하기
+            </button>
+          </div>
+        )}
+
+        {gpsTracker.error && (
+          <div className="mt-4 rounded-xl bg-rose-50 border border-rose-200 p-4">
+            <p className="text-xs font-semibold text-rose-700 mb-2">⚠️ GPS 오류</p>
+            <p className="text-xs text-rose-600">{gpsTracker.error}</p>
+            {gpsTracker.permissionDenied && (
+              <p className="text-xs text-rose-600 mt-2">
+                설정에서 위치 권한을 허용한 후 페이지를 새로고침해주세요.
+              </p>
+            )}
+          </div>
+        )}
       </section>
+
+      {showCompleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="text-center">
+              <p className="text-4xl mb-3">🎉</p>
+              <h2 className="text-xl font-bold text-neutral-900 mb-2">산책 완주!</h2>
+              <p className="text-sm text-neutral-600 mb-4">
+                모든 체크포인트를 달성했어요! 축하합니다! 🏆
+              </p>
+              <div className="bg-brand-50 rounded-xl p-4 mb-5">
+                <p className="text-xs text-neutral-500 mb-1">달성한 체크포인트</p>
+                <p className="text-lg font-bold text-brand-700">
+                  {gpsTracker.completedCheckpoints.size}/{route.checkpoints.length}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {user ? (
+                <>
+                  <button
+                    onClick={handleCompleteRoute}
+                    className="w-full rounded-xl bg-brand-500 py-3 text-sm font-bold text-white hover:bg-brand-600 transition"
+                  >
+                    산책 완료 저장
+                  </button>
+                  <button
+                    onClick={() => setShowCompleteModal(false)}
+                    className="w-full rounded-xl border border-neutral-200 bg-white py-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50 transition"
+                  >
+                    계속 산책하기
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-center text-neutral-500 mb-2">
+                    로그인하면 완주 기록이 저장됩니다
+                  </p>
+                  <button
+                    onClick={() => window.location.href = "/"}
+                    className="w-full rounded-xl bg-brand-500 py-3 text-sm font-bold text-white hover:bg-brand-600 transition"
+                  >
+                    홈으로 돌아가기
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

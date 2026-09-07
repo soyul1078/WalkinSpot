@@ -15,13 +15,13 @@ type OAuthOption = {
 // Naver는 Supabase 기본 프로바이더 목록에 없어서, Supabase 대시보드에 Custom OIDC로
 // 별도 등록해야 실제로 동작한다 (Client ID/Secret 발급 후 Authentication > Providers에서 설정).
 const OAUTH_OPTIONS: OAuthOption[] = [
-  { id: "google", label: "Google로 계속하기", provider: "google", className: "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50" },
   { id: "kakao", label: "카카오로 계속하기", provider: "kakao", className: "bg-[#FEE500] text-neutral-900 hover:brightness-95" },
+  { id: "google", label: "Google로 계속하기", provider: "google", className: "border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50" },
   { id: "twitter", label: "X로 계속하기", provider: "twitter", className: "bg-black text-white hover:bg-neutral-800" },
   {
     id: "naver",
-    label: "네이버로 계속하기",
-    className: "bg-[#03C75A] text-white hover:brightness-95",
+    label: "네이버로 계속하기 (준비 중)",
+    className: "bg-neutral-300 text-neutral-600 cursor-not-allowed",
     note: "Supabase에 Custom OIDC 등록 후 활성화됩니다",
   },
 ];
@@ -60,15 +60,13 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
             <button
               key={option.id}
               onClick={() => handleLogin(option)}
+              disabled={!option.provider}
               className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${option.className}`}
             >
               {option.label}
             </button>
           ))}
         </div>
-        <p className="mt-4 text-center text-[11px] leading-relaxed text-neutral-400">
-          네이버 로그인은 Supabase 커스텀 OIDC 연동이 필요해 준비 중입니다.
-        </p>
       </div>
     </div>
   );

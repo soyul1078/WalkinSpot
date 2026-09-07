@@ -6,11 +6,27 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Checkpoint, LatLng } from "@/lib/mockRoutes";
 
-const checkpointIcon = L.divIcon({
-  html: '<div style="font-size:22px;line-height:1;transform:translate(-50%,-100%)">📍</div>',
-  className: "",
-  iconSize: [0, 0],
-});
+function createCheckpointIcon(index: number) {
+  return L.divIcon({
+    html: `<div style="
+      width:32px;
+      height:32px;
+      background-color:#1fae63;
+      border:2px solid white;
+      border-radius:50%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:16px;
+      font-weight:bold;
+      color:white;
+      transform:translate(-50%,-50%);
+      box-shadow:0 2px 8px rgba(0,0,0,0.2);
+    ">${index}</div>`,
+    className: "",
+    iconSize: [32, 32],
+  });
+}
 
 function FitBounds({ path }: { path: LatLng[] }) {
   const map = useMap();
@@ -36,8 +52,8 @@ export default function RouteMap({ path, checkpoints }: { path: LatLng[]; checkp
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <Polyline positions={path.map((p) => [p.lat, p.lng])} pathOptions={{ color: "#1fae63", weight: 4 }} />
-      {checkpoints.map((cp) => (
-        <Marker key={cp.name} position={[cp.lat, cp.lng]} icon={checkpointIcon}>
+      {checkpoints.map((cp, index) => (
+        <Marker key={cp.name} position={[cp.lat, cp.lng]} icon={createCheckpointIcon(index + 1)}>
           <Popup>{cp.name}</Popup>
         </Marker>
       ))}
